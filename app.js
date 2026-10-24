@@ -1,7 +1,7 @@
 // Pomodoro Focus Dashboard - State, Timer, REST API, & Web Audio Integration
 // Pure timer helpers live in timer-core.js (unit-tested).
 
-const { modeDuration, remainingSeconds, nextMode, snapshot, restore, formatTime, goalProgress, shortcutAction, STORAGE_KEY } = window.TimerCore;
+const { heatLevel, heatmapCells, estimateLabel, modeDuration, remainingSeconds, nextMode, snapshot, restore, formatTime, goalProgress, shortcutAction, STORAGE_KEY } = window.TimerCore;
 
 let config = {
   focus_duration: 25,
@@ -171,6 +171,7 @@ async function handleSessionComplete() {
         })
       });
       loadStats();
+      fetchTasks();
     } catch (e) {
       console.error('Failed to log session', e);
     }
@@ -262,6 +263,7 @@ function restoreTimerState() {
 // ====================================================
 const taskFormEl = document.getElementById('task-form');
 const taskInputEl = document.getElementById('task-input');
+const taskEstimateEl = document.getElementById('task-estimate');
 const taskListEl = document.getElementById('task-list');
 const taskCounterEl = document.getElementById('task-counter');
 const taskEmptyStateEl = document.getElementById('task-empty-state');
@@ -339,6 +341,15 @@ function renderTasks() {
 
     li.appendChild(checkBtn);
     li.appendChild(textSpan);
+
+    const label = estimateLabel(task.actual, task.estimate);
+    if (label) {
+      const est = document.createElement('span');
+      est.className = 'task-estimate-badge' + (task.estimate && task.actual > task.estimate ? ' over' : '');
+      est.textContent = label;
+      est.title = task.estimate ? `${task.actual} done of ${task.estimate} estimated` : `${task.actual} done`;
+      li.appendChild(est);
+    }
     li.appendChild(deleteBtn);
     taskListEl.appendChild(li);
   });
@@ -364,7 +375,7 @@ function selectActiveTask(task) {
   saveTimerState();
 }
 
-async function addTask(text) {
+async function addTask(text, estimate = 0) {
   const clean = text.trim();
   if (!clean) return;
 
@@ -372,7 +383,7 @@ async function addTask(text) {
     const res = await fetch('/api/tasks', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: clean })
+      body: JSON.stringify({ text: clean, estimate })
     });
     if (res.ok) {
       await fetchTasks();
@@ -410,8 +421,10 @@ async function deleteTask(id) {
 
 taskFormEl.addEventListener('submit', (e) => {
   e.preventDefault();
-  addTask(taskInputEl.value);
+  const estimate = Math.min(20, Math.max(0, parseInt(taskEstimateEl.value, 10) || 0));
+  addTask(taskInputEl.value, estimate);
   taskInputEl.value = '';
+  taskEstimateEl.value = '';
 });
 
 // ====================================================
@@ -480,8 +493,66 @@ async function loadStats() {
 
     // Render bar chart
     renderChart(stats.daily_breakdown);
+    loadInsights();
   } catch (err) {
     console.error('Failed to load stats', err);
+  }
+}
+
+// ---- Insights: heatmap + focus by task ----
+const heatmapEl = document.getElementById('heatmap');
+const heatmapTotalEl = document.getElementById('heatmap-total');
+const taskStatsEl = document.getElementById('task-stats');
+const taskStatsEmptyEl = document.getElementById('task-stats-empty');
+
+function renderHeatmap(days) {
+  heatmapEl.innerHTML = '';
+  const max = Math.max(...days.map(d => d.minutes), 0);
+  heatmapCells(days).forEach(day => {
+    const cell = document.createElement('span');
+    if (!day) {
+      cell.className = 'heat-cell empty';
+    } else {
+      cell.className = `heat-cell level-${heatLevel(day.minutes, max)}`;
+      cell.title = `${day.date}: ${day.minutes} min (${day.sessions} sessions)`;
+    }
+    heatmapEl.appendChild(cell);
+  });
+  const hours = days.reduce((acc, d) => acc + d.minutes, 0) / 60;
+  heatmapTotalEl.textContent = `${hours.toFixed(1)}h`;
+}
+
+function renderTaskStats(rows) {
+  taskStatsEl.innerHTML = '';
+  taskStatsEmptyEl.classList.toggle('visible', rows.length === 0);
+  const max = Math.max(...rows.map(r => r.minutes), 1);
+  rows.forEach(row => {
+    const li = document.createElement('li');
+    li.className = 'task-stat-row';
+    const name = document.createElement('span');
+    name.className = 'task-stat-name';
+    name.textContent = row.label;
+    const meta = document.createElement('span');
+    meta.className = 'task-stat-meta';
+    meta.textContent = `${row.sessions} 🍅 · ${Math.round(row.minutes)}m`;
+    const bar = document.createElement('span');
+    bar.className = 'task-stat-bar';
+    bar.style.width = `${Math.max(4, Math.round((row.minutes / max) * 100))}%`;
+    li.append(name, meta, bar);
+    taskStatsEl.appendChild(li);
+  });
+}
+
+async function loadInsights() {
+  try {
+    const [heat, byTask] = await Promise.all([
+      fetch('/api/stats/heatmap?days=84').then(r => (r.ok ? r.json() : [])),
+      fetch('/api/stats/tasks').then(r => (r.ok ? r.json() : []))
+    ]);
+    renderHeatmap(heat);
+    renderTaskStats(byTask);
+  } catch (err) {
+    console.error('Failed to load insights', err);
   }
 }
 
