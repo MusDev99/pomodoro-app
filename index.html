@@ -8,6 +8,10 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
+  <script>
+    // Apply saved theme before first paint to avoid a light flash
+    try { document.documentElement.setAttribute('data-theme', localStorage.getItem('pomodoro-theme') || 'light'); } catch (e) {}
+  </script>
 </head>
 <body data-mode="focus">
   <div class="dashboard-wrapper">
@@ -18,6 +22,11 @@
         <h1 class="brand-title">Pomodoro Dashboard</h1>
       </div>
       <div class="topbar-actions">
+        <button id="theme-toggle-btn" class="icon-action-btn" type="button" aria-label="Toggle dark mode" aria-pressed="false">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
         <button id="open-settings-btn" class="icon-action-btn" type="button" aria-label="Open Timer Settings">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <circle cx="12" cy="12" r="3"></circle>
@@ -155,6 +164,17 @@
             </div>
           </div>
 
+          <!-- Daily Goal -->
+          <div class="goal-container">
+            <div class="chart-header">
+              <span class="chart-title">Daily Goal</span>
+              <span id="goal-text" class="chart-subtitle">0/4 sessions</span>
+            </div>
+            <div id="goal-bar" class="goal-bar" role="progressbar" aria-label="Daily goal progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div id="goal-bar-fill" class="goal-bar-fill"></div>
+            </div>
+          </div>
+
           <!-- 7-Day Chart -->
           <div class="chart-container">
             <div class="chart-header">
@@ -170,10 +190,10 @@
 
   <!-- Settings Modal -->
   <div id="settings-modal" class="modal-backdrop" aria-hidden="true">
-    <div class="modal-card">
+    <div class="modal-card" role="dialog" aria-modal="true" aria-labelledby="settings-title">
       <div class="modal-header">
-        <h3 class="modal-title">Timer Preferences</h3>
-        <button id="close-settings-btn" class="modal-close-btn" type="button">&times;</button>
+        <h3 id="settings-title" class="modal-title">Timer Preferences</h3>
+        <button id="close-settings-btn" class="modal-close-btn" type="button" aria-label="Close settings">&times;</button>
       </div>
       <form id="settings-form" class="settings-form">
         <div class="setting-item">
@@ -192,6 +212,15 @@
           <label for="setting-interval">Long Break Interval (cycles)</label>
           <input id="setting-interval" type="number" min="1" max="10" value="4" required>
         </div>
+        <div class="setting-item">
+          <label for="setting-goal">Daily Goal (sessions)</label>
+          <input id="setting-goal" type="number" min="1" max="24" value="4" required>
+        </div>
+        <div class="setting-item">
+          <label for="setting-autostart">Auto-start next session</label>
+          <input id="setting-autostart" class="setting-toggle" type="checkbox">
+        </div>
+        <p class="shortcut-hint">Shortcuts: <kbd>Space</kbd> start/pause · <kbd>R</kbd> reset · <kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> modes</p>
         <div class="modal-footer">
           <button type="submit" class="control-btn primary-btn" style="min-width: 100%;">Save Settings</button>
         </div>
@@ -200,6 +229,7 @@
   </div>
 
   <script src="audio.js"></script>
+  <script src="timer-core.js"></script>
   <script src="app.js"></script>
 </body>
 </html>
