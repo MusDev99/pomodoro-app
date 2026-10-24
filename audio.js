@@ -23,6 +23,28 @@ class AmbientSoundEngine {
     }
   }
 
+  /** Short two-note chime marking the end of a session (independent of ambient volume). */
+  chime() {
+    try {
+      this.init();
+      const ctx = this.audioCtx;
+      [659.25, 880].forEach((freq, i) => {
+        const start = ctx.currentTime + i * 0.25;
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, start);
+        gain.gain.setValueAtTime(0.0001, start);
+        gain.gain.exponentialRampToValueAtTime(0.25, start + 0.03);
+        gain.gain.exponentialRampToValueAtTime(0.0001, start + 0.9);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start(start);
+        osc.stop(start + 1);
+      });
+    } catch (e) { /* audio unavailable */ }
+  }
+
   setVolume(val) {
     this.volume = Math.max(0, Math.min(1, val));
     if (this.masterGainNode && this.audioCtx) {
