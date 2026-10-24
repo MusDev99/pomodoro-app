@@ -16,6 +16,10 @@ scripts/validate.sh      # full validation gate (syntax, tests, tests-for-change
 | 🎯 Daily goal | progress bar, configurable in settings |
 | 🌗 Dark mode | toggle in top bar, saved |
 | 📊 Stats | local-time day buckets, streak, 7-day chart |
+| 🍅 Estimates | optional pomodoro estimate per task, shown as `done/estimate` |
+| 🗓 Heatmap | focus minutes per day for the last 12 weeks |
+| 📈 Focus by task | top tasks by focus time |
+| ⬇ CSV export | `GET /api/export/sessions.csv` (formula-injection safe) |
 | 🔒 Security | same-origin writes only, input validation, static allowlist, binds to localhost |
 
 Agent skills live in `.agents/skills/` (`code-review`, `feature-validation`).

@@ -57,6 +57,16 @@
               autocomplete="off"
               required
             />
+            <input
+              id="task-estimate"
+              class="task-estimate"
+              type="number"
+              min="0"
+              max="20"
+              placeholder="🍅"
+              title="Estimated pomodoros"
+              aria-label="Estimated pomodoros"
+            />
             <button id="add-task-btn" class="task-add-btn" type="submit" aria-label="Add Task">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                 <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -183,6 +193,25 @@
             </div>
             <div id="weekly-chart" class="bar-chart-bars"></div>
           </div>
+        </section>
+
+        <section class="panel-card insights-card" aria-label="Insights">
+          <div class="card-header">
+            <h2 class="card-title">Insights</h2>
+            <a id="export-csv-link" class="pill-badge export-link" href="/api/export/sessions.csv" download>⬇ CSV</a>
+          </div>
+
+          <div class="chart-header">
+            <span class="chart-title">Last 12 weeks</span>
+            <span id="heatmap-total" class="chart-subtitle">0h</span>
+          </div>
+          <div id="heatmap" class="heatmap" role="img" aria-label="Focus heatmap for the last 12 weeks"></div>
+
+          <div class="chart-header by-task-header">
+            <span class="chart-title">Focus by task</span>
+          </div>
+          <ul id="task-stats" class="task-stats"></ul>
+          <div id="task-stats-empty" class="task-empty-state">Finish a focus session with a task selected.</div>
         </section>
       </aside>
     </main>

@@ -96,3 +96,29 @@ test('shortcutAction maps keys and ignores form fields', () => {
   assert.equal(T.shortcutAction(' ', { tagName: 'BUTTON' }), null); // native click handles space
   assert.equal(T.shortcutAction('r', { tagName: 'BUTTON' }), 'reset');
 });
+
+test('heatLevel scales 1-4 relative to the busiest day, 0 for none', () => {
+  assert.equal(T.heatLevel(0, 100), 0);
+  assert.equal(T.heatLevel(10, 0), 0);
+  assert.equal(T.heatLevel(1, 100), 1);
+  assert.equal(T.heatLevel(26, 100), 2);
+  assert.equal(T.heatLevel(51, 100), 3);
+  assert.equal(T.heatLevel(76, 100), 4);
+  assert.equal(T.heatLevel(100, 100), 4);
+  assert.equal(T.heatLevel(500, 100), 4); // never exceeds 4
+});
+
+test('heatmapCells pads so the first date lands on its weekday row', () => {
+  // 2026-10-24 is a Saturday (row 6), 2026-10-25 a Sunday (row 0)
+  assert.equal(T.heatmapCells([{ date: '2026-10-24' }]).filter(c => c === null).length, 6);
+  assert.equal(T.heatmapCells([{ date: '2026-10-25' }]).filter(c => c === null).length, 0);
+  assert.deepEqual(T.heatmapCells([]), []);
+});
+
+test('estimateLabel shows actual/estimate, plain count, or nothing', () => {
+  assert.equal(T.estimateLabel(2, 4), '2/4 🍅');
+  assert.equal(T.estimateLabel(0, 3), '0/3 🍅');
+  assert.equal(T.estimateLabel(5, 0), '5 🍅');
+  assert.equal(T.estimateLabel(0, 0), '');
+  assert.equal(T.estimateLabel(5, 4), '5/4 🍅'); // over-estimate still reported
+});

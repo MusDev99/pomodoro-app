@@ -92,7 +92,30 @@
     }
   }
 
+  /** Heat level 0-4 for a day's focus minutes relative to the busiest day (0 = no focus). */
+  function heatLevel(minutes, maxMinutes) {
+    if (!(minutes > 0) || !(maxMinutes > 0)) return 0;
+    return Math.min(4, Math.max(1, Math.ceil((minutes / maxMinutes) * 4)));
+  }
+
+  /**
+   * Lay heatmap days out for a 7-row, column-flow grid (row 0 = Sunday):
+   * leading nulls push the first date onto its weekday row.
+   */
+  function heatmapCells(days) {
+    if (!days.length) return [];
+    const firstDow = new Date(days[0].date + 'T00:00:00Z').getUTCDay();
+    return Array(firstDow).fill(null).concat(days);
+  }
+
+  /** "2/4 🍅" style progress text; "3 🍅" when there is no estimate. */
+  function estimateLabel(actual, estimate) {
+    if (!estimate) return actual > 0 ? `${actual} 🍅` : '';
+    return `${actual}/${estimate} 🍅`;
+  }
+
   return {
+    heatLevel, heatmapCells, estimateLabel,
     MODES, STORAGE_KEY, modeDuration, remainingSeconds, nextMode,
     snapshot, restore, formatTime, goalProgress, shortcutAction,
   };

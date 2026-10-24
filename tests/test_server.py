@@ -106,6 +106,106 @@ class TaskTests(ApiTestCase):
         self.assertEqual(self.call("PUT", f"/api/tasks/{tid}", {})[0], 400)
 
 
+class EstimateTests(ApiTestCase):
+    def test_estimate_defaults_and_roundtrip(self):
+        _, t, _ = self.call("POST", "/api/tasks", {"text": "plain"})
+        self.assertEqual((t["estimate"], t["actual"]), (0, 0))
+        _, t2, _ = self.call("POST", "/api/tasks", {"text": "planned", "estimate": 4})
+        self.assertEqual(t2["estimate"], 4)
+        self.assertEqual(self.call("PUT", f"/api/tasks/{t['id']}", {"estimate": 3})[0], 200)
+        by_id = {x["id"]: x for x in self.call("GET", "/api/tasks")[1]}
+        self.assertEqual(by_id[t["id"]]["estimate"], 3)
+
+    def test_rejects_invalid_estimate(self):
+        _, t, _ = self.call("POST", "/api/tasks", {"text": "x"})
+        for bad in [-1, 21, "3", 1.5, True, None]:
+            self.assertEqual(self.call("POST", "/api/tasks", {"text": "y", "estimate": bad})[0], 400, bad)
+            self.assertEqual(self.call("PUT", f"/api/tasks/{t['id']}", {"estimate": bad})[0], 400, bad)
+
+    def test_actual_counts_only_focus_sessions_for_that_task(self):
+        _, t, _ = self.call("POST", "/api/tasks", {"text": "write", "estimate": 2})
+        for _ in range(2):
+            self.call("POST", "/api/sessions", {"mode": "focus", "duration_seconds": 1500, "task_id": t["id"]})
+        self.call("POST", "/api/sessions", {"mode": "shortBreak", "duration_seconds": 300, "task_id": t["id"]})
+        self.call("POST", "/api/sessions", {"mode": "focus", "duration_seconds": 1500})
+        task = self.call("GET", "/api/tasks")[1][0]
+        self.assertEqual((task["estimate"], task["actual"]), (2, 2))
+
+    def test_migration_adds_estimate_column_and_keeps_rows(self):
+        path = os.path.join(self.tmp.name, "old.db")
+        with closing(sqlite3.connect(path)) as conn:
+            conn.execute("CREATE TABLE tasks (id TEXT PRIMARY KEY, text TEXT NOT NULL, "
+                         "completed INTEGER NOT NULL DEFAULT 0, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+            conn.execute("INSERT INTO tasks (id, text) VALUES ('1', 'legacy')")
+            conn.commit()
+        server.init_db(path)
+        server.init_db(path)  # idempotent
+        with closing(sqlite3.connect(path)) as conn:
+            self.assertEqual(conn.execute("SELECT text, estimate FROM tasks").fetchall(), [("legacy", 0)])
+
+
+class InsightsApiTests(ApiTestCase):
+    def test_task_stats_ranks_by_minutes_and_labels_orphans(self):
+        _, a, _ = self.call("POST", "/api/tasks", {"text": "Alpha"})
+        _, b, _ = self.call("POST", "/api/tasks", {"text": "Beta"})
+        self.call("POST", "/api/sessions", {"mode": "focus", "duration_seconds": 600, "task_id": a["id"]})
+        self.call("POST", "/api/sessions", {"mode": "focus", "duration_seconds": 1500, "task_id": b["id"]})
+        self.call("POST", "/api/sessions", {"mode": "focus", "duration_seconds": 300})
+        self.call("POST", "/api/sessions", {"mode": "focus", "duration_seconds": 60, "task_id": "gone"})
+        self.call("POST", "/api/sessions", {"mode": "longBreak", "duration_seconds": 900, "task_id": a["id"]})
+        status, rows, _ = self.call("GET", "/api/stats/tasks")
+        self.assertEqual(status, 200)
+        self.assertEqual([r["label"] for r in rows], ["Beta", "Alpha", "No task", "(deleted task)"])
+        self.assertEqual(rows[0], {"task_id": b["id"], "label": "Beta", "sessions": 1, "minutes": 25.0})
+        self.assertEqual(rows[1]["minutes"], 10.0)  # break excluded
+
+    def test_task_stats_empty(self):
+        self.assertEqual(self.call("GET", "/api/stats/tasks")[1], [])
+
+    def test_heatmap_shape_and_today(self):
+        self.call("POST", "/api/sessions", {"mode": "focus", "duration_seconds": 1500})
+        status, days, _ = self.call("GET", "/api/stats/heatmap?days=30")
+        self.assertEqual(status, 200)
+        self.assertEqual(len(days), 30)
+        self.assertEqual(days[-1]["date"], datetime.now().strftime("%Y-%m-%d"))
+        self.assertEqual((days[-1]["minutes"], days[-1]["sessions"]), (25.0, 1))
+        self.assertEqual(sum(d["minutes"] for d in days[:-1]), 0)
+        self.assertEqual(len(self.call("GET", "/api/stats/heatmap")[1]), server.HEATMAP_DEFAULT_DAYS)
+
+    def test_heatmap_rejects_bad_days(self):
+        for bad in ["6", "366", "abc", "-1", ""]:
+            self.assertEqual(self.call("GET", f"/api/stats/heatmap?days={bad}")[0], 400, bad)
+
+    def test_csv_export(self):
+        _, t, _ = self.call("POST", "/api/tasks", {"text": "Ship it"})
+        self.call("POST", "/api/sessions", {"mode": "focus", "duration_seconds": 1500, "task_id": t["id"]})
+        status, body, headers = self.call("GET", "/api/export/sessions.csv")
+        self.assertEqual(status, 200)
+        self.assertIn("text/csv", headers.get("Content-Type"))
+        self.assertIn("attachment", headers.get("Content-Disposition"))
+        lines = body.decode().strip().split("\n")
+        self.assertEqual(lines[0], "id,mode,duration_seconds,completed_at_local,task_id,task")
+        self.assertEqual(len(lines), 2)
+        self.assertTrue(lines[1].endswith(f",{t['id']},Ship it"))
+
+    def test_csv_neutralises_formula_injection_and_quotes(self):
+        _, t, _ = self.call("POST", "/api/tasks", {"text": '=HYPERLINK("http://evil","x"),a'})
+        self.call("POST", "/api/sessions", {"mode": "focus", "duration_seconds": 60, "task_id": t["id"]})
+        import csv, io
+        rows = list(csv.reader(io.StringIO(self.call("GET", "/api/export/sessions.csv")[1].decode())))
+        self.assertEqual(rows[1][5], '\'=HYPERLINK("http://evil","x"),a')
+
+    def test_csv_empty_has_header_only(self):
+        body = self.call("GET", "/api/export/sessions.csv")[1].decode().strip()
+        self.assertEqual(body, "id,mode,duration_seconds,completed_at_local,task_id,task")
+
+    def test_csv_safe_helper(self):
+        for risky in ["=1+1", "+1", "-1", "@SUM(A1)", "\tx", "\rx"]:
+            self.assertEqual(server.csv_safe(risky), "'" + risky)
+        self.assertEqual(server.csv_safe("normal"), "normal")
+        self.assertEqual(server.csv_safe(25), 25)
+
+
 class SessionTests(ApiTestCase):
     def test_record_session(self):
         status, body, _ = self.call("POST", "/api/sessions",
@@ -222,6 +322,18 @@ class StatsTests(unittest.TestCase):
         self.assertEqual(len(s["daily_breakdown"]), 7)
         self.assertEqual(sum(d["minutes"] for d in s["daily_breakdown"]), 25.0)
         self.assertEqual(s["total_sessions"], 2)
+
+    def test_heatmap_zero_fills_and_buckets_local_days(self):
+        self.add("a", "2026-10-23 17:00:00")                    # local 24th 01:00
+        self.add("b", "2026-10-20 02:00:00", secs=3000)          # local 20th
+        self.add("c", "2026-10-20 03:00:00", mode="shortBreak")  # ignored
+        days = server.build_heatmap(self.conn, days=7, now=datetime(2026, 10, 24, 12, 0))
+        self.assertEqual([d["date"] for d in days][0], "2026-10-18")
+        self.assertEqual(days[-1]["date"], "2026-10-24")
+        by = {d["date"]: d for d in days}
+        self.assertEqual(by["2026-10-24"]["minutes"], 25.0)
+        self.assertEqual((by["2026-10-20"]["minutes"], by["2026-10-20"]["sessions"]), (50.0, 1))
+        self.assertEqual(by["2026-10-21"]["minutes"], 0)
 
     def test_streak(self):
         d = date(2026, 10, 24)
