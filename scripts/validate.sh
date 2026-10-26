@@ -11,7 +11,7 @@ step "Python syntax"
 python3 -m py_compile server.py tests/test_server.py
 
 step "JavaScript syntax"
-for f in app.js audio.js timer-core.js tests/timer-core.test.js; do node --check "$f"; done
+for f in app.js audio.js timer-core.js sw.js tests/timer-core.test.js; do node --check "$f"; done
 
 step "Node unit tests (timer-core)"
 node --test tests/*.test.js

@@ -720,9 +720,44 @@ settingsForm.addEventListener('submit', async (e) => {
   }
 });
 
+// ====================================================
+// PWA: service worker registration and install prompt
+// ====================================================
+const installBtnEl = document.getElementById('install-btn');
+let deferredInstallPrompt = null;
+
+window.addEventListener('beforeinstallprompt', (e) => {
+  e.preventDefault(); // show our own button instead of the mini-infobar
+  deferredInstallPrompt = e;
+  installBtnEl.hidden = false;
+});
+
+installBtnEl.addEventListener('click', async () => {
+  if (!deferredInstallPrompt) return;
+  deferredInstallPrompt.prompt();
+  try {
+    await deferredInstallPrompt.userChoice;
+  } catch (e) { /* prompt was dismissed */ }
+  deferredInstallPrompt = null;
+  installBtnEl.hidden = true;
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  installBtnEl.hidden = true;
+});
+
+function registerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  navigator.serviceWorker.register('/sw.js').catch((err) => {
+    console.error('Service worker registration failed', err);
+  });
+}
+
 // Initialization: settings first (durations depend on them), then restore the timer
 (async function init() {
   updateDisplay();
   await Promise.all([loadSettings(), fetchTasks(), loadStats()]);
   restoreTimerState();
+  registerServiceWorker();
 })();

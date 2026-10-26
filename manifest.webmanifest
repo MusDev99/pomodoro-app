@@ -1,0 +1,17 @@
+{
+  "name": "Pomodoro Focus Dashboard",
+  "short_name": "Pomodoro",
+  "description": "Focus timer, tasks, ambient sound and focus analytics.",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#fdfbf7",
+  "theme_color": "#f38ba0",
+  "icons": [
+    { "src": "icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}

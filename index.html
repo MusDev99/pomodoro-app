@@ -2,7 +2,17 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="description" content="Focus timer, tasks, ambient sound and focus analytics.">
+  <meta name="theme-color" content="#f38ba0" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#2a2024" media="(prefers-color-scheme: dark)">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Pomodoro">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png" sizes="192x192">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <title>Focus Dashboard - Pomodoro</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,6 +32,12 @@
         <h1 class="brand-title">Pomodoro Dashboard</h1>
       </div>
       <div class="topbar-actions">
+        <button id="install-btn" class="install-btn" type="button" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M12 3v12"></path><path d="M7 10l5 5 5-5"></path><path d="M5 21h14"></path>
+          </svg>
+          <span>Install</span>
+        </button>
         <button id="theme-toggle-btn" class="icon-action-btn" type="button" aria-label="Toggle dark mode" aria-pressed="false">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
@@ -120,7 +136,7 @@
 
           <div class="timer-display-container">
             <div class="timer-circle">
-              <svg class="progress-ring" width="290" height="290" viewBox="0 0 290 290">
+              <svg class="progress-ring" viewBox="0 0 290 290" aria-hidden="true">
                 <circle class="progress-ring-bg" cx="145" cy="145" r="130" />
                 <circle class="progress-ring-circle" cx="145" cy="145" r="130" />
               </svg>
