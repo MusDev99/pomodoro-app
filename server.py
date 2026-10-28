@@ -36,6 +36,12 @@ STATIC_FILES = {
     "/audio.js": "audio.js",
     "/timer-core.js": "timer-core.js",
     "/style.css": "style.css",
+    "/sw.js": "sw.js",
+    "/manifest.webmanifest": "manifest.webmanifest",
+    "/icons/icon-192.png": "icons/icon-192.png",
+    "/icons/icon-512.png": "icons/icon-512.png",
+    "/icons/icon-maskable-512.png": "icons/icon-maskable-512.png",
+    "/icons/apple-touch-icon.png": "icons/apple-touch-icon.png",
 }
 
 DEFAULT_SETTINGS = {
@@ -297,6 +303,16 @@ def sessions_csv(conn):
 
 class DashboardRequestHandler(http.server.SimpleHTTPRequestHandler):
     db_file = DB_FILE
+    extensions_map = {
+        **http.server.SimpleHTTPRequestHandler.extensions_map,
+        ".webmanifest": "application/manifest+json",
+    }
+
+    def end_headers(self):
+        # Browsers must re-check the service worker so new deploys take effect.
+        if urlparse(self.path).path == "/sw.js":
+            self.send_header("Cache-Control", "no-cache")
+        super().end_headers()
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, directory=BASE_DIR, **kwargs)

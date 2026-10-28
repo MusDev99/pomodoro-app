@@ -283,6 +283,63 @@ class SecurityAndStaticTests(ApiTestCase):
         self.assertEqual(self.call("GET", "/api/nope")[0], 404)
 
 
+class PwaTests(ApiTestCase):
+    def test_manifest_is_valid_installable_json(self):
+        status, body, headers = self.call("GET", "/manifest.webmanifest")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get("Content-Type"), "application/manifest+json")
+        manifest = json.loads(body)
+        for key in ["name", "short_name", "start_url", "display", "icons", "theme_color", "background_color"]:
+            self.assertIn(key, manifest)
+        self.assertIn(manifest["display"], {"standalone", "fullscreen", "minimal-ui"})
+        purposes = {i.get("purpose") for i in manifest["icons"]}
+        sizes = {i["sizes"] for i in manifest["icons"]}
+        self.assertIn("192x192", sizes)
+        self.assertIn("512x512", sizes)
+        self.assertIn("maskable", purposes)
+
+    def test_every_manifest_icon_is_served_as_png(self):
+        manifest = json.loads(self.call("GET", "/manifest.webmanifest")[1])
+        for icon in manifest["icons"]:
+            status, body, headers = self.call("GET", "/" + icon["src"])
+            self.assertEqual(status, 200, icon["src"])
+            self.assertEqual(headers.get("Content-Type"), "image/png")
+            self.assertEqual(body[:8], b"\x89PNG\r\n\x1a\n", icon["src"])
+
+    def test_apple_touch_icon_served(self):
+        status, body, _ = self.call("GET", "/icons/apple-touch-icon.png")
+        self.assertEqual(status, 200)
+        self.assertEqual(body[:4], b"\x89PNG")
+
+    def test_service_worker_served_uncached_and_js(self):
+        status, body, headers = self.call("GET", "/sw.js")
+        self.assertEqual(status, 200)
+        self.assertEqual(headers.get("Cache-Control"), "no-cache")
+        self.assertIn("javascript", headers.get("Content-Type"))
+        self.assertIn(b"addEventListener('fetch'", body)
+
+    def test_api_is_not_cached_by_worker(self):
+        sw = self.call("GET", "/sw.js")[1].decode()
+        self.assertIn("url.pathname.startsWith('/api/')", sw)
+
+    def test_index_links_manifest_and_icons(self):
+        html = self.call("GET", "/")[1].decode()
+        self.assertIn('rel="manifest" href="manifest.webmanifest"', html)
+        self.assertIn('rel="apple-touch-icon"', html)
+        self.assertIn('name="viewport"', html)
+        self.assertIn("viewport-fit=cover", html)
+        self.assertIn('id="install-btn"', html)
+
+    def test_shell_assets_referenced_by_worker_exist(self):
+        sw = self.call("GET", "/sw.js")[1].decode()
+        import re
+        shell = re.search(r"const SHELL = \[(.*?)\];", sw, re.S).group(1)
+        paths = re.findall(r"'(/[^']*)'", shell)
+        self.assertGreater(len(paths), 5)
+        for path in paths:
+            self.assertEqual(self.call("GET", path)[0], 200, path)
+
+
 class StatsTests(unittest.TestCase):
     def setUp(self):
         self._tz = os.environ.get("TZ")
