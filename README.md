@@ -1,12 +1,14 @@
 # 🍅 Pomodoro Focus Dashboard
 
-Zero-dependency app: vanilla JS frontend + Python stdlib server + SQLite.
+Zero-dependency static app: vanilla JS + `localStorage`. No backend — all data stays in the browser.
 
 ```bash
-python3 server.py        # http://127.0.0.1:8000  (HOST / PORT env vars override)
-npm test                 # node + python unit tests
+npm start                # any static server works; this one is http://localhost:8000
+npm test                 # node unit tests
 scripts/validate.sh      # full validation gate (syntax, tests, tests-for-changes check)
 ```
+
+You can also just open `index.html` directly in a browser.
 
 | Feature | Notes |
 |---|---|
@@ -19,7 +21,20 @@ scripts/validate.sh      # full validation gate (syntax, tests, tests-for-change
 | 🍅 Estimates | optional pomodoro estimate per task, shown as `done/estimate` |
 | 🗓 Heatmap | focus minutes per day for the last 12 weeks |
 | 📈 Focus by task | top tasks by focus time |
-| ⬇ CSV export | `GET /api/export/sessions.csv` (formula-injection safe) |
-| 🔒 Security | same-origin writes only, input validation, static allowlist, binds to localhost |
+| ⬇ CSV export | generated in the browser (formula-injection safe) |
+| 📱 Mobile | single-column layout, touch-sized controls, bottom-sheet settings |
+
+## Storage
+
+`store.js` keeps everything in `localStorage` under these keys:
+
+| Key | Contents |
+|---|---|
+| `pomodoro-tasks` | task list |
+| `pomodoro-sessions` | completed sessions (stats are computed from these) |
+| `pomodoro-settings` | timer preferences + theme |
+| `pomodoro-timer-state` | running timer snapshot (survives reload) |
+
+Data is per browser and per device; clearing site data deletes it. Export CSV to keep a copy.
 
 Agent skills live in `.agents/skills/` (`code-review`, `feature-validation`).

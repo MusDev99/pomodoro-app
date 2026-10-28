@@ -1,18 +1,19 @@
 // Service worker: caches the app shell so the dashboard opens offline.
-// API calls always go to the network so stats and tasks are never stale.
-const CACHE = 'pomodoro-shell-v2';
+// Paths are relative to this file so it also works under a subpath (e.g. GitHub Pages).
+const CACHE = 'pomodoro-shell-v3';
 const SHELL = [
-  '/',
-  '/index.html',
-  '/style.css',
-  '/app.js',
-  '/audio.js',
-  '/timer-core.js',
-  '/manifest.webmanifest',
-  '/icons/icon-192.png',
-  '/icons/icon-512.png',
-  '/icons/icon-maskable-512.png',
-  '/icons/apple-touch-icon.png'
+  './',
+  './index.html',
+  './style.css',
+  './app.js',
+  './audio.js',
+  './timer-core.js',
+  './store.js',
+  './manifest.webmanifest',
+  './icons/icon-192.png',
+  './icons/icon-512.png',
+  './icons/icon-maskable-512.png',
+  './icons/apple-touch-icon.png'
 ];
 
 self.addEventListener('install', (event) => {
@@ -31,9 +32,8 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   const url = new URL(req.url);
-  // Only handle same-origin GETs; let everything else (POST, fonts, API) pass through.
+  // Only handle same-origin GETs; let everything else (e.g. fonts) pass through.
   if (req.method !== 'GET' || url.origin !== self.location.origin) return;
-  if (url.pathname.startsWith('/api/')) return;
 
   // Network first, fall back to the cache so fresh deploys win when online.
   event.respondWith(
@@ -45,6 +45,6 @@ self.addEventListener('fetch', (event) => {
         }
         return res;
       })
-      .catch(() => caches.match(req).then((hit) => hit || caches.match('/index.html')))
+      .catch(() => caches.match(req).then((hit) => hit || caches.match('./index.html')))
   );
 });

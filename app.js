@@ -1,6 +1,7 @@
-// Pomodoro Focus Dashboard - State, Timer, REST API, & Web Audio Integration
-// Pure timer helpers live in timer-core.js (unit-tested).
+// Pomodoro Focus Dashboard - State, Timer, localStorage persistence, & Web Audio Integration
+// Pure timer helpers live in timer-core.js and the data layer in store.js (both unit-tested).
 
+const store = window.PomodoroStore.createStore(window.localStorage);
 const { heatLevel, heatmapCells, estimateLabel, modeDuration, remainingSeconds, nextMode, snapshot, restore, formatTime, goalProgress, shortcutAction, STORAGE_KEY } = window.TimerCore;
 
 let config = {
@@ -143,7 +144,7 @@ function notifySessionEnd(finishedMode, upcomingMode) {
   }
 }
 
-async function handleSessionComplete() {
+function handleSessionComplete() {
   pauseTimer();
   const finishedMode = currentMode;
   const finishedDuration = totalDuration;
@@ -158,23 +159,10 @@ async function handleSessionComplete() {
   if (config.auto_start) startTimer();
   saveTimerState();
 
-  // Log focus session to backend
   if (finishedMode === 'focus') {
-    try {
-      await fetch('/api/sessions', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          mode: 'focus',
-          duration_seconds: finishedDuration,
-          task_id: finishedTaskId
-        })
-      });
-      loadStats();
-      fetchTasks();
-    } catch (e) {
-      console.error('Failed to log session', e);
-    }
+    store.logSession({ mode: 'focus', duration_seconds: finishedDuration, task_id: finishedTaskId });
+    loadStats();
+    fetchTasks();
   }
 }
 
@@ -259,7 +247,7 @@ function restoreTimerState() {
 }
 
 // ====================================================
-// Task Tracker (REST API & SQLite Integration)
+// Task Tracker (localStorage)
 // ====================================================
 const taskFormEl = document.getElementById('task-form');
 const taskInputEl = document.getElementById('task-input');
@@ -270,17 +258,10 @@ const taskEmptyStateEl = document.getElementById('task-empty-state');
 
 let tasks = [];
 
-async function fetchTasks() {
-  try {
-    const res = await fetch('/api/tasks');
-    if (res.ok) {
-      tasks = await res.json();
-      syncActiveTaskPill();
-      renderTasks();
-    }
-  } catch (err) {
-    console.error('Failed to load tasks', err);
-  }
+function fetchTasks() {
+  tasks = store.listTasks();
+  syncActiveTaskPill();
+  renderTasks();
 }
 
 function updateTaskCounter() {
@@ -375,48 +356,23 @@ function selectActiveTask(task) {
   saveTimerState();
 }
 
-async function addTask(text, estimate = 0) {
-  const clean = text.trim();
-  if (!clean) return;
-
-  try {
-    const res = await fetch('/api/tasks', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: clean, estimate })
-    });
-    if (res.ok) {
-      await fetchTasks();
-    }
-  } catch (err) {
-    console.error('Failed to add task', err);
-  }
+function addTask(text, estimate = 0) {
+  if (store.addTask(text, estimate)) fetchTasks();
 }
 
-async function toggleTask(id, completed) {
-  try {
-    await fetch(`/api/tasks/${id}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ completed })
-    });
-    await fetchTasks();
-  } catch (err) {
-    console.error('Failed to toggle task', err);
-  }
+function toggleTask(id, completed) {
+  store.updateTask(id, { completed });
+  fetchTasks();
 }
 
-async function deleteTask(id) {
+function deleteTask(id) {
   if (activeTaskId === id) {
     activeTaskId = null;
     activeTaskPillEl.style.display = 'none';
+    saveTimerState();
   }
-  try {
-    await fetch(`/api/tasks/${id}`, { method: 'DELETE' });
-    await fetchTasks();
-  } catch (err) {
-    console.error('Failed to delete task', err);
-  }
+  store.deleteTask(id);
+  fetchTasks();
 }
 
 taskFormEl.addEventListener('submit', (e) => {
@@ -475,28 +431,22 @@ function renderGoal() {
   goalTrackEl.setAttribute('aria-valuenow', String(g.percent));
 }
 
-async function loadStats() {
-  try {
-    const res = await fetch('/api/stats/summary');
-    if (!res.ok) return;
-    const stats = await res.json();
+function loadStats() {
+  const stats = store.summary();
 
-    todayFocusMinsEl.textContent = Math.round(stats.today_minutes);
-    todaySessionsCountEl.textContent = stats.today_sessions;
-    streakCountEl.textContent = stats.streak;
-    todaySessions = stats.today_sessions;
-    renderGoal();
+  todayFocusMinsEl.textContent = Math.round(stats.today_minutes);
+  todaySessionsCountEl.textContent = stats.today_sessions;
+  streakCountEl.textContent = stats.streak;
+  todaySessions = stats.today_sessions;
+  renderGoal();
 
-    const weeklyMins = stats.daily_breakdown.reduce((acc, d) => acc + d.minutes, 0);
-    const weeklyHours = (weeklyMins / 60).toFixed(1);
-    weeklyTotalEl.textContent = `${weeklyHours}h total`;
+  const weeklyMins = stats.daily_breakdown.reduce((acc, d) => acc + d.minutes, 0);
+  const weeklyHours = (weeklyMins / 60).toFixed(1);
+  weeklyTotalEl.textContent = `${weeklyHours}h total`;
 
-    // Render bar chart
-    renderChart(stats.daily_breakdown);
-    loadInsights();
-  } catch (err) {
-    console.error('Failed to load stats', err);
-  }
+  // Render bar chart
+  renderChart(stats.daily_breakdown);
+  loadInsights();
 }
 
 // ---- Insights: heatmap + focus by task ----
@@ -543,18 +493,23 @@ function renderTaskStats(rows) {
   });
 }
 
-async function loadInsights() {
-  try {
-    const [heat, byTask] = await Promise.all([
-      fetch('/api/stats/heatmap?days=84').then(r => (r.ok ? r.json() : [])),
-      fetch('/api/stats/tasks').then(r => (r.ok ? r.json() : []))
-    ]);
-    renderHeatmap(heat);
-    renderTaskStats(byTask);
-  } catch (err) {
-    console.error('Failed to load insights', err);
-  }
+function loadInsights() {
+  renderHeatmap(store.heatmap(84));
+  renderTaskStats(store.taskStats());
 }
+
+// CSV export: build the file in the browser and hand it to the user as a download
+document.getElementById('export-csv-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  const url = URL.createObjectURL(new Blob([store.sessionsCsv()], { type: 'text/csv;charset=utf-8' }));
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'pomodoro-sessions.csv';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+});
 
 function renderChart(dailyData) {
   weeklyChartEl.innerHTML = '';
@@ -596,19 +551,11 @@ function applyTheme(theme) {
   try { localStorage.setItem('pomodoro-theme', theme); } catch (e) { /* ignore */ }
 }
 
-themeToggleBtn.addEventListener('click', async () => {
+themeToggleBtn.addEventListener('click', () => {
   const next = config.theme === 'dark' ? 'light' : 'dark';
   config.theme = next;
   applyTheme(next);
-  try {
-    await fetch('/api/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ theme: next })
-    });
-  } catch (err) {
-    console.error('Failed to save theme', err);
-  }
+  store.saveSettings({ theme: next });
 });
 
 // ====================================================
@@ -675,22 +622,14 @@ function fillSettingsForm() {
   settingAutoStartInput.checked = Boolean(config.auto_start);
 }
 
-async function loadSettings() {
-  try {
-    const res = await fetch('/api/settings');
-    if (res.ok) {
-      const data = await res.json();
-      config = { ...config, ...data };
-      fillSettingsForm();
-      applyTheme(config.theme);
-      renderGoal();
-    }
-  } catch (err) {
-    console.error('Failed to load settings', err);
-  }
+function loadSettings() {
+  config = { ...config, ...store.getSettings() };
+  fillSettingsForm();
+  applyTheme(config.theme);
+  renderGoal();
 }
 
-settingsForm.addEventListener('submit', async (e) => {
+settingsForm.addEventListener('submit', (e) => {
   e.preventDefault();
   const updated = {
     focus_duration: parseInt(settingFocusInput.value, 10),
@@ -701,22 +640,11 @@ settingsForm.addEventListener('submit', async (e) => {
     auto_start: settingAutoStartInput.checked ? 1 : 0
   };
 
-  try {
-    const res = await fetch('/api/settings', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updated)
-    });
-    if (res.ok) {
-      config = { ...config, ...updated };
-      closeSettings();
-      renderGoal();
-      if (!isRunning) {
-        switchMode(currentMode);
-      }
-    }
-  } catch (err) {
-    console.error('Failed to save settings', err);
+  config = { ...config, ...store.saveSettings(updated) };
+  closeSettings();
+  renderGoal();
+  if (!isRunning) {
+    switchMode(currentMode);
   }
 });
 
@@ -749,15 +677,17 @@ window.addEventListener('appinstalled', () => {
 
 function registerServiceWorker() {
   if (!('serviceWorker' in navigator)) return;
-  navigator.serviceWorker.register('/sw.js').catch((err) => {
+  navigator.serviceWorker.register('sw.js').catch((err) => {
     console.error('Service worker registration failed', err);
   });
 }
 
 // Initialization: settings first (durations depend on them), then restore the timer
-(async function init() {
+(function init() {
   updateDisplay();
-  await Promise.all([loadSettings(), fetchTasks(), loadStats()]);
+  loadSettings();
+  fetchTasks();
+  loadStats();
   restoreTimerState();
   registerServiceWorker();
 })();

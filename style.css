@@ -1107,3 +1107,70 @@ body {
     animation-duration: 0.01ms !important;
   }
 }
+
+/* Phones: extras on top of the mobile-first base */
+@media (max-width: 600px) {
+  /* No hover on touch, so keep delete visible */
+  .task-delete-btn {
+    opacity: 1;
+  }
+
+  .task-list {
+    max-height: none;
+  }
+
+  /* Ambient presets side by side as compact chips */
+  .sound-presets {
+    flex-direction: row;
+  }
+
+  .sound-chip {
+    flex: 1;
+    flex-direction: column;
+    gap: 4px;
+    padding: 10px 6px;
+    font-size: 0.76rem;
+    text-align: center;
+  }
+
+  /* Settings become a bottom sheet */
+  .modal-backdrop {
+    align-items: flex-end;
+    padding: 0;
+  }
+
+  .modal-card {
+    max-width: none;
+    border-radius: 24px 24px 0 0;
+    padding: 22px 20px max(22px, env(safe-area-inset-bottom));
+    max-height: 90vh;
+    overflow-y: auto;
+    transform: translateY(100%);
+  }
+
+  .setting-item {
+    gap: 12px;
+  }
+
+  .shortcut-hint {
+    display: none;
+  }
+}
+
+@media (max-width: 360px) {
+  .secondary-btn span {
+    display: none;
+  }
+
+  .secondary-btn {
+    padding: 14px 16px;
+  }
+}
+
+/* No hover on touch screens: avoid sticky hover states */
+@media (hover: none) {
+  .icon-action-btn:hover,
+  .primary-btn:hover {
+    transform: none;
+  }
+}
