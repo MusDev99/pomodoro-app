@@ -3,7 +3,7 @@
   "private": true,
   "description": "Pomodoro Focus Dashboard",
   "scripts": {
-    "start": "python3 server.py",
-    "test": "node --test tests/*.test.js && python3 -m unittest discover -s tests -v"
+    "start": "python3 -m http.server 8000",
+    "test": "node --test tests/*.test.js"
   }
 }

@@ -5,8 +5,8 @@ description: Reviews code changes in the Pomodoro app for correctness, security,
 
 # Code Review Skill (Pomodoro Focus Dashboard)
 
-Stack: vanilla JS frontend (`app.js`, `timer-core.js`, `audio.js`), Python stdlib server (`server.py`) with SQLite.
-Pure logic belongs in `timer-core.js` (frontend) and the helper functions in `server.py`, because those are unit-tested.
+Stack: static vanilla JS app (`app.js`, `timer-core.js`, `store.js`, `audio.js`); all data lives in `localStorage`, no backend.
+Pure logic belongs in `timer-core.js` (timer) and `store.js` (data + stats), because those are unit-tested.
 
 ## Process
 
@@ -19,29 +19,30 @@ Pure logic belongs in `timer-core.js` (frontend) and the helper functions in `se
 
 ### Correctness
 - Does the change do what the PR says? Trace one realistic input end to end.
-- Edge cases: empty/oversized input, missing rows (404 vs 200), duplicate ids, timer at 0, page reload mid-session, tab in background.
-- Time handling: `sessions.completed_at` is stored in **UTC**; queries must use `date(completed_at,'localtime')`. Flag any naive date compare.
+- Edge cases: empty/oversized input, missing ids, duplicate ids, corrupt/missing `localStorage` data, timer at 0, page reload mid-session, tab in background.
+- Time handling: `completed_at` is stored as a UTC ISO string; day buckets must go through `localDayKey(new Date(...))`. Flag any string-slice date compare.
 - Timer must be wall-clock based (`endsAt - Date.now()`), never a decrementing counter.
 
-### Security (server.py)
-- No wildcard CORS. Mutating routes go through the same-origin (`Origin` vs `Host`) check.
-- All request data validated before touching SQLite; SQL uses `?` params only (f-strings only for fixed column fragments).
-- Static serving stays on the `STATIC_FILES` allowlist, so `pomodoro.db`, `server.py`, `.git` stay unreachable.
+### Security / data safety
+- `store.js` validates and clamps everything it writes; reads tolerate corrupt JSON without throwing.
+- Every `localStorage` access is wrapped so private mode / quota errors cannot break the app.
+- CSV export goes through `csvSafe` (formula injection).
 - Frontend uses `textContent`/DOM APIs for user text, never `innerHTML` with task text.
 
 ### Tests
-- New behaviour has tests in `tests/` (`test_server.py` for API, `timer-core.test.js` for pure JS logic).
-- Tests assert behaviour, including failure paths (400/403/404/409), not just the happy path.
+- New behaviour has tests in `tests/` (`store.test.js` for data/stats, `timer-core.test.js` for timer logic).
+- Tests assert behaviour, including failure paths (invalid input, missing ids, corrupt storage), not just the happy path.
 - No skipped, disabled, or weakened tests to get green.
 
 ### Style and maintainability
 - Matches surrounding code: naming, comment density, vanilla JS (no new dependencies without discussion).
 - Every new function has a short docstring/JSDoc stating purpose, parameters, and return.
-- DOM-free logic goes in `timer-core.js`, not `app.js`.
+- DOM-free logic goes in `timer-core.js` / `store.js`, not `app.js`.
+- Layout still works at phone width (≤600px): no horizontal scroll, touch targets ≥ 44px.
 - Accessibility: buttons have `aria-label`, modals trap focus and close on Esc, controls are keyboard reachable.
 
 ### Performance
-- No per-row queries in loops; prefer one grouped query. Indexes exist for new filter columns.
+- Avoid re-reading/parsing `localStorage` inside loops; read once per operation.
 
 ## Feedback rules
 - Be specific: file:line, what is wrong, why it matters, and a suggested fix.
@@ -56,7 +57,7 @@ Gate: ✅ scripts/validate.sh passed  |  ❌ failed (paste output)
 
 | # | Severity | Location | Finding | Suggested fix |
 |---|----------|----------|---------|---------------|
-| 1 | 🔴 blocker | server.py:123 | ... | ... |
+| 1 | 🔴 blocker | store.js:123 | ... | ... |
 | 2 | 🟠 should-fix | ... | ... | ... |
 | 3 | 🟡 nit | ... | ... | ... |
 
