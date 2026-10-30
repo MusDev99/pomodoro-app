@@ -1,65 +1,76 @@
 ---
 name: code-review
-description: Reviews code changes in the Pomodoro app for correctness, security, and style, and verifies tests pass. Use when reviewing a PR/diff or checking code quality before merge.
+description: Reviews a diff, branch or PR against a shared 7-area checklist (intent, readability, tests, security, performance, style, docs) and reports findings by severity. Use before opening or merging a PR, or when asked to review code.
 ---
 
-# Code Review Skill (Pomodoro Focus Dashboard)
+# 🔍 Code review
 
-Stack: static vanilla JS app (`app.js`, `timer-core.js`, `store.js`, `audio.js`); all data lives in `localStorage`, no backend.
-Pure logic belongs in `timer-core.js` (timer) and `store.js` (data + stats), because those are unit-tested.
+Shared checklist for every MusDev99 repo. The repo's own `CLAUDE.md` / `AGENTS.md` rules win where they are stricter. If a more specific review skill or a `repo-checks.md` sits next to this file, walk it too.
 
-## Process
+## ▶️ Steps
 
-1. **Scope the diff**: `git diff origin/main...HEAD --stat`, then read every changed file in full, not only hunks.
-2. **Run the gate first**: `scripts/validate.sh`. If it fails, report the failure output verbatim as a 🔴 blocker; do not review further until the author has fixed it.
-3. **Walk the checklist** below and record findings.
-4. **Report** using the format at the bottom.
+1. **Scope**: `git diff <base>...HEAD --stat` (base = `main`, or `master` where it is still the default). Read each changed file in full, not only the hunks.
+2. **Intent**: read the PR description, linked issue or `docs/features/<slug>/feature.md`.
+3. **Gate**: run the repo's check (`npm run verify`, `npm test`, `scripts/validate.sh`, see `CLAUDE.md`). A red gate is a 🔴 finding; paste the failing output.
+4. **Checklist**: walk the 7 areas below. Report only what you verified in code, with `file:line`.
+5. **Report** in the format at the bottom.
 
-## Checklist
+## ✅ Checklist
 
-### Correctness
-- Does the change do what the PR says? Trace one realistic input end to end.
-- Edge cases: empty/oversized input, missing ids, duplicate ids, corrupt/missing `localStorage` data, timer at 0, page reload mid-session, tab in background.
-- Time handling: `completed_at` is stored as a UTC ISO string; day buckets must go through `localDayKey(new Date(...))`. Flag any string-slice date compare.
-- Timer must be wall-clock based (`endsAt - Date.now()`), never a decrementing counter.
+### 🎯 1. Functionality & Intent
+- [ ] Does what the story / feature asks; trace one realistic input end to end.
+- [ ] Edge cases, error handling and null / empty states are covered.
+- [ ] Concurrency, race conditions and async logic are safe (if applicable).
 
-### Security / data safety
-- `store.js` validates and clamps everything it writes; reads tolerate corrupt JSON without throwing.
-- Every `localStorage` access is wrapped so private mode / quota errors cannot break the app.
-- CSV export goes through `csvSafe` (formula injection).
-- Frontend uses `textContent`/DOM APIs for user text, never `innerHTML` with task text.
+### 📖 2. Readability & Simplicity
+- [ ] Clean, modular, easy for another developer to follow.
+- [ ] No over-engineering or abstractions without a second caller.
+- [ ] Clear, descriptive names for variables, functions and classes.
+- [ ] Non-obvious logic has a short comment explaining *why*, not *what*.
 
-### Tests
-- New behaviour has tests in `tests/` (`store.test.js` for data/stats, `timer-core.test.js` for timer logic).
-- Tests assert behaviour, including failure paths (invalid input, missing ids, corrupt storage), not just the happy path.
-- No skipped, disabled, or weakened tests to get green.
+### 🧪 3. Testing
+- [ ] New or changed behaviour has unit / integration / e2e tests, including failure paths.
+- [ ] All test suites and CI pipelines pass. No skipped, disabled or weakened tests.
 
-### Style and maintainability
-- Matches surrounding code: naming, comment density, vanilla JS (no new dependencies without discussion).
-- Every new function has a short docstring/JSDoc stating purpose, parameters, and return.
-- DOM-free logic goes in `timer-core.js` / `store.js`, not `app.js`.
-- Layout still works at phone width (≤600px): no horizontal scroll, touch targets ≥ 44px.
-- Accessibility: buttons have `aria-label`, modals trap focus and close on Esc, controls are keyboard reachable.
+### 🔒 4. Security & Compliance
+- [ ] No injection, hardcoded secrets or missing input validation.
+- [ ] Access control, authentication and data-privacy rules are respected.
+- [ ] Complies with relevant legal and organisational rules.
 
-### Performance
-- Avoid re-reading/parsing `localStorage` inside loops; read once per operation.
+### ⚡ 5. Performance & Resources
+- [ ] No memory leaks, infinite loops or unoptimised queries (e.g. N+1).
+- [ ] CPU, memory and network calls are used efficiently.
 
-## Feedback rules
-- Be specific: file:line, what is wrong, why it matters, and a suggested fix.
-- Separate blockers from nits. Do not block on style preferences.
-- Praise what is solid in one line; do not pad.
+### 🎨 6. Style & Consistency
+- [ ] Follows the team / language style guide.
+- [ ] Formatting, lint and static analysis run clean, without warnings.
+- [ ] Matches the existing architecture and patterns of the codebase.
 
-## Report format
+### 📝 7. Documentation
+- [ ] Public APIs, config options and user-facing changes are documented (README, CHANGELOG, `.env.example`).
+
+## 🚦 Severity
+
+| Level | Meaning | Merge? |
+|---|---|---|
+| 🔴 Blocker | Bug, security hole, data loss, red gate | Fix first |
+| 🟠 Major | Likely bug, missing test / validation, broken a11y or mobile | Fix first |
+| 🟡 Minor | Readability, naming, small inefficiency | Follow-up OK |
+| 🔵 Nit | Taste; only if the repo style backs it | Optional |
+
+Be specific: failing input → wrong output, then the smallest fix. No style opinions the repo's rules don't back.
+
+## 📋 Output
 
 ```
-## Review: <branch or PR>
-Gate: ✅ scripts/validate.sh passed  |  ❌ failed (paste output)
+## 🔍 Review: <branch or PR>
+Gate: ✅ <command> passed | ❌ failed (output below)
 
-| # | Severity | Location | Finding | Suggested fix |
-|---|----------|----------|---------|---------------|
-| 1 | 🔴 blocker | store.js:123 | ... | ... |
-| 2 | 🟠 should-fix | ... | ... | ... |
-| 3 | 🟡 nit | ... | ... | ... |
+| # | Sev | Area | Location | Finding | Fix |
+|---|-----|------|----------|---------|-----|
+| 1 | 🔴 | 🔒 Security | api/x.ts:42 | ... | ... |
+| 2 | 🟡 | 📖 Readability | src/y.ts:10 | ... | ... |
 
+👍 Solid: <one line>
 Verdict: ✅ approve | 🔁 request changes
 ```
