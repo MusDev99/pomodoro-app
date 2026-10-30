@@ -37,4 +37,4 @@ You can also just open `index.html` directly in a browser.
 
 Data is per browser and per device; clearing site data deletes it. Export CSV to keep a copy.
 
-Agent skills live in `.agents/skills/` (`code-review`, `feature-validation`).
+Agent skills live in `.agents/skills/` (`code-review`, `feature-validation`). `code-review/SKILL.md` is the shared checklist used in every MusDev99 repo; `code-review/repo-checks.md` holds this app's extra checks.
