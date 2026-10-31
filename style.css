@@ -876,6 +876,234 @@ body {
   color: #c05621;
 }
 
+/* Task reorder + inline edit */
+.task-item {
+  gap: 6px;
+}
+
+.task-drag-handle,
+.task-edit-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.task-drag-handle {
+  width: 22px;
+  min-height: 44px;
+  margin-left: -6px;
+  cursor: grab;
+  touch-action: none; /* let pointer events drive the drag on touch screens */
+  opacity: 0.55;
+}
+
+.task-drag-handle:active {
+  cursor: grabbing;
+}
+
+.task-drag-handle svg {
+  width: 16px;
+  height: 16px;
+}
+
+.task-edit-btn {
+  min-width: 36px;
+  min-height: 44px;
+  opacity: 0.6;
+}
+
+.task-edit-btn:hover {
+  opacity: 1;
+  color: var(--text-main);
+}
+
+.task-edit-btn svg {
+  width: 15px;
+  height: 15px;
+}
+
+/* Narrower than the 44px default so text keeps room on phones; still 44px tall */
+.task-item .task-delete-btn {
+  min-width: 36px;
+}
+
+.task-item.dragging {
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+  border-color: var(--theme-accent);
+  position: relative;
+  z-index: 1;
+}
+
+.task-edit-input {
+  flex: 1;
+  min-width: 0;
+  font-family: inherit;
+  font-size: 16px;
+  color: var(--text-main);
+  background: var(--surface);
+  border: 1px solid var(--theme-accent);
+  border-radius: 8px;
+  padding: 6px 8px;
+  outline: none;
+}
+
+/* Title + estimate badge stacked */
+.task-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 3px;
+}
+
+.task-main .task-text {
+  flex: none;
+  align-self: stretch;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+
+.task-main .task-edit-input {
+  align-self: stretch;
+}
+
+/* Small visible checkbox, 44px tap area via an invisible halo */
+.task-item .task-checkbox-btn {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  min-width: 22px;
+  min-height: 22px;
+}
+
+.task-item .task-checkbox-btn::before {
+  content: '';
+  position: absolute;
+  inset: -11px;
+}
+
+/* Weekly review */
+.review-headline {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.review-hours {
+  font-size: 1.8rem;
+  font-weight: 700;
+  color: var(--text-main);
+  line-height: 1.1;
+}
+
+.review-compare {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.review-facts {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.review-facts div {
+  background: var(--surface-muted);
+  border-radius: 14px;
+  padding: 10px 12px;
+  min-width: 0;
+}
+
+.review-facts dt {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.review-facts dd {
+  font-size: 0.86rem;
+  font-weight: 700;
+  color: var(--text-main);
+  overflow-wrap: anywhere;
+  /* up to two lines, then ellipsis */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.pill-badge.up {
+  color: #2f855a;
+  background: rgba(72, 187, 120, 0.15);
+}
+
+.pill-badge.down {
+  color: #c05621;
+  background: rgba(237, 137, 54, 0.15);
+}
+
+/* Settings: your data */
+.data-section {
+  border: none;
+  border-top: 1px solid var(--card-border);
+  padding-top: 14px;
+}
+
+.data-section legend {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: var(--text-main);
+  padding-right: 8px;
+}
+
+.data-hint {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  margin: 6px 0 10px;
+}
+
+.data-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.data-btn {
+  flex: 1;
+  min-height: 44px;
+  border: 1px solid var(--card-border);
+  border-radius: 12px;
+  background: var(--surface-muted);
+  color: var(--text-main);
+  font-family: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.data-btn:hover {
+  border-color: var(--theme-accent);
+}
+
+.data-status {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  margin-top: 8px;
+  min-height: 1em;
+}
+
+.data-status.error {
+  color: #c53030;
+}
+
 /* Insights */
 .insights-card {
   margin-top: 18px;

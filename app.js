@@ -134,14 +134,23 @@ function requestNotificationPermission() {
 
 function notifySessionEnd(finishedMode, upcomingMode) {
   window.ambientSound.chime();
-  if ('Notification' in window && Notification.permission === 'granted') {
-    try {
-      new Notification(`${modeTitle(finishedMode)} complete`, {
-        body: `Up next: ${modeTitle(upcomingMode)}`,
-        tag: 'pomodoro-session-end'
-      });
-    } catch (e) { /* some browsers only allow notifications via service workers */ }
-  }
+  if (!('Notification' in window) || Notification.permission !== 'granted') return;
+  const title = `${modeTitle(finishedMode)} complete`;
+  const options = {
+    body: `Up next: ${modeTitle(upcomingMode)}`,
+    tag: 'pomodoro-session-end',
+    renotify: true,
+    icon: 'icons/icon-192.png',
+    vibrate: [200, 100, 200]
+  };
+  const viaPage = () => {
+    try { new Notification(title, options); } catch (e) { /* page notifications unsupported */ }
+  };
+  // Android Chrome only allows notifications from a service worker, so prefer it when present.
+  if (!('serviceWorker' in navigator)) return viaPage();
+  navigator.serviceWorker.getRegistration()
+    .then((reg) => (reg ? reg.showNotification(title, options) : viaPage()))
+    .catch(viaPage);
 }
 
 function handleSessionComplete() {
@@ -283,6 +292,25 @@ function renderTasks() {
     li.className = `task-item ${task.completed ? 'completed' : ''} ${task.id === activeTaskId ? 'selected-task' : ''}`;
     li.dataset.id = task.id;
 
+    // Drag handle: pointer drag (mouse + touch) or ArrowUp/ArrowDown to reorder
+    const handle = document.createElement('button');
+    handle.className = 'task-drag-handle';
+    handle.type = 'button';
+    handle.setAttribute('aria-label', `Reorder "${task.text}" (drag, or use arrow keys)`);
+    handle.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true">
+        <circle cx="9" cy="6" r="1.6"/><circle cx="15" cy="6" r="1.6"/>
+        <circle cx="9" cy="12" r="1.6"/><circle cx="15" cy="12" r="1.6"/>
+        <circle cx="9" cy="18" r="1.6"/><circle cx="15" cy="18" r="1.6"/>
+      </svg>
+    `;
+    handle.addEventListener('pointerdown', (e) => startTaskDrag(e, li));
+    handle.addEventListener('keydown', (e) => {
+      if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+      e.preventDefault();
+      moveTaskBy(task.id, e.key === 'ArrowUp' ? -1 : 1);
+    });
+
     // Checkbox button
     const checkBtn = document.createElement('button');
     checkBtn.className = 'task-checkbox-btn';
@@ -304,6 +332,22 @@ function renderTasks() {
     textSpan.textContent = task.text;
     textSpan.addEventListener('click', () => selectActiveTask(task));
 
+    // Edit button
+    const editBtn = document.createElement('button');
+    editBtn.className = 'task-edit-btn';
+    editBtn.type = 'button';
+    editBtn.setAttribute('aria-label', 'Edit task');
+    editBtn.innerHTML = `
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M12 20h9"></path>
+        <path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"></path>
+      </svg>
+    `;
+    editBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      startTaskEdit(li, task);
+    });
+
     // Delete button
     const deleteBtn = document.createElement('button');
     deleteBtn.className = 'task-delete-btn';
@@ -320,8 +364,10 @@ function renderTasks() {
       deleteTask(task.id);
     });
 
-    li.appendChild(checkBtn);
-    li.appendChild(textSpan);
+    // Title with the estimate badge underneath, so the title keeps its width on phones
+    const main = document.createElement('div');
+    main.className = 'task-main';
+    main.appendChild(textSpan);
 
     const label = estimateLabel(task.actual, task.estimate);
     if (label) {
@@ -329,8 +375,13 @@ function renderTasks() {
       est.className = 'task-estimate-badge' + (task.estimate && task.actual > task.estimate ? ' over' : '');
       est.textContent = label;
       est.title = task.estimate ? `${task.actual} done of ${task.estimate} estimated` : `${task.actual} done`;
-      li.appendChild(est);
+      main.appendChild(est);
     }
+
+    li.appendChild(handle);
+    li.appendChild(checkBtn);
+    li.appendChild(main);
+    li.appendChild(editBtn);
     li.appendChild(deleteBtn);
     taskListEl.appendChild(li);
   });
@@ -373,6 +424,90 @@ function deleteTask(id) {
   }
   store.deleteTask(id);
   fetchTasks();
+}
+
+/** Swap a task's title for an input; Enter or leaving the field saves, Esc cancels. */
+function startTaskEdit(li, task) {
+  const textSpan = li.querySelector('.task-text');
+  if (!textSpan) return;
+  const input = document.createElement('input');
+  input.className = 'task-edit-input';
+  input.value = task.text;
+  input.maxLength = 80;
+  input.setAttribute('aria-label', 'Edit task');
+  textSpan.replaceWith(input);
+  input.focus();
+  input.select();
+
+  let finished = false;
+  const finish = (save) => {
+    if (finished) return;
+    finished = true;
+    if (save && input.value.trim() && input.value.trim() !== task.text) {
+      store.updateTask(task.id, { text: input.value });
+    }
+    fetchTasks();
+  };
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      finish(true);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      finish(false);
+    }
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+
+function focusTaskHandle(id) {
+  const handle = taskListEl.querySelector(`[data-id="${CSS.escape(id)}"] .task-drag-handle`);
+  if (handle) handle.focus();
+}
+
+/** Keyboard reorder: move a task one place up (-1) or down (+1). */
+function moveTaskBy(id, delta) {
+  const ids = tasks.map(t => t.id);
+  const from = ids.indexOf(id);
+  const to = from + delta;
+  if (from < 0 || to < 0 || to >= ids.length) return;
+  ids.splice(to, 0, ids.splice(from, 1)[0]);
+  store.reorderTasks(ids);
+  fetchTasks();
+  focusTaskHandle(id);
+}
+
+/**
+ * Pointer reorder: the row follows the pointer between siblings; order is saved on release.
+ * Listens on the document because moving the row in the DOM drops pointer capture.
+ */
+function startTaskDrag(e, li) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  const pointerId = e.pointerId;
+  li.classList.add('dragging');
+
+  const onMove = (ev) => {
+    if (ev.pointerId !== pointerId) return;
+    const others = [...taskListEl.children].filter(el => el !== li);
+    const before = others.find((el) => {
+      const r = el.getBoundingClientRect();
+      return ev.clientY < r.top + r.height / 2;
+    });
+    if ((before || null) !== li.nextElementSibling) taskListEl.insertBefore(li, before || null);
+  };
+  const onEnd = (ev) => {
+    if (ev.pointerId !== pointerId) return;
+    document.removeEventListener('pointermove', onMove);
+    document.removeEventListener('pointerup', onEnd);
+    document.removeEventListener('pointercancel', onEnd);
+    li.classList.remove('dragging');
+    store.reorderTasks([...taskListEl.children].map(el => el.dataset.id));
+    fetchTasks();
+  };
+  document.addEventListener('pointermove', onMove);
+  document.addEventListener('pointerup', onEnd);
+  document.addEventListener('pointercancel', onEnd);
 }
 
 taskFormEl.addEventListener('submit', (e) => {
@@ -446,7 +581,41 @@ function loadStats() {
 
   // Render bar chart
   renderChart(stats.daily_breakdown);
+  renderReview(store.weeklyReview());
   loadInsights();
+}
+
+// ---- Weekly review ----
+const reviewChangeEl = document.getElementById('review-change');
+const reviewHoursEl = document.getElementById('review-hours');
+const reviewCompareEl = document.getElementById('review-compare');
+const reviewSessionsEl = document.getElementById('review-sessions');
+const reviewBestDayEl = document.getElementById('review-best-day');
+const reviewTopTaskEl = document.getElementById('review-top-task');
+const reviewLongestStreakEl = document.getElementById('review-longest-streak');
+
+const hoursText = (minutes) => `${(minutes / 60).toFixed(1)}h`;
+
+function renderReview(r) {
+  reviewHoursEl.textContent = hoursText(r.this_week.minutes);
+  reviewCompareEl.textContent = `last 7 days · ${hoursText(r.last_week.minutes)} the week before`;
+
+  const change = r.change_percent;
+  reviewChangeEl.classList.remove('up', 'down');
+  reviewChangeEl.classList.toggle('muted', change === null || change === 0);
+  if (change === null) {
+    reviewChangeEl.textContent = r.this_week.minutes > 0 ? 'New' : '—';
+    reviewChangeEl.title = 'Nothing to compare with yet';
+  } else {
+    reviewChangeEl.textContent = change > 0 ? `▲ ${change}%` : change < 0 ? `▼ ${Math.abs(change)}%` : '= 0%';
+    if (change !== 0) reviewChangeEl.classList.add(change > 0 ? 'up' : 'down');
+    reviewChangeEl.title = 'Compared with the previous 7 days';
+  }
+
+  reviewSessionsEl.textContent = r.this_week.sessions;
+  reviewBestDayEl.textContent = r.best_day ? `${r.best_day.label} · ${Math.round(r.best_day.minutes)}m` : '—';
+  reviewTopTaskEl.textContent = r.top_task ? `${r.top_task.label} · ${Math.round(r.top_task.minutes)}m` : '—';
+  reviewLongestStreakEl.textContent = `${r.longest_streak} ${r.longest_streak === 1 ? 'day' : 'days'}`;
 }
 
 // ---- Insights: heatmap + focus by task ----
@@ -498,17 +667,21 @@ function loadInsights() {
   renderTaskStats(store.taskStats());
 }
 
-// CSV export: build the file in the browser and hand it to the user as a download
-document.getElementById('export-csv-link').addEventListener('click', (e) => {
-  e.preventDefault();
-  const url = URL.createObjectURL(new Blob([store.sessionsCsv()], { type: 'text/csv;charset=utf-8' }));
+/** Build a file in the browser and hand it to the user as a download. */
+function downloadFile(filename, text, type) {
+  const url = URL.createObjectURL(new Blob([text], { type }));
   const a = document.createElement('a');
   a.href = url;
-  a.download = 'pomodoro-sessions.csv';
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+document.getElementById('export-csv-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  downloadFile('pomodoro-sessions.csv', store.sessionsCsv(), 'text/csv;charset=utf-8');
 });
 
 function renderChart(dailyData) {
@@ -681,6 +854,47 @@ function registerServiceWorker() {
     console.error('Service worker registration failed', err);
   });
 }
+
+// ====================================================
+// Backup: export / import everything as JSON
+// ====================================================
+const importBackupInputEl = document.getElementById('import-backup-input');
+const dataStatusEl = document.getElementById('data-status');
+
+function setDataStatus(text, isError = false) {
+  dataStatusEl.textContent = text;
+  dataStatusEl.classList.toggle('error', isError);
+}
+
+document.getElementById('export-backup-btn').addEventListener('click', () => {
+  const day = window.PomodoroStore.localDayKey(new Date());
+  downloadFile(`pomodoro-backup-${day}.json`, JSON.stringify(store.exportBackup(), null, 2), 'application/json');
+  setDataStatus('Backup downloaded.');
+});
+
+document.getElementById('import-backup-btn').addEventListener('click', () => importBackupInputEl.click());
+
+importBackupInputEl.addEventListener('change', async () => {
+  const file = importBackupInputEl.files[0];
+  importBackupInputEl.value = ''; // allow picking the same file again
+  if (!file) return;
+  try {
+    let data;
+    try {
+      data = JSON.parse(await file.text());
+    } catch (e) {
+      throw new Error('This file is not a Pomodoro backup.');
+    }
+    const added = store.importBackup(data);
+    loadSettings();
+    fetchTasks();
+    loadStats();
+    if (!isRunning) switchMode(currentMode);
+    setDataStatus(`Imported ${added.tasks} new ${added.tasks === 1 ? 'task' : 'tasks'} and ${added.sessions} new ${added.sessions === 1 ? 'session' : 'sessions'}.`);
+  } catch (err) {
+    setDataStatus(err.message, true);
+  }
+});
 
 // Initialization: settings first (durations depend on them), then restore the timer
 (function init() {

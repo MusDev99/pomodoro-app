@@ -46,3 +46,17 @@ test('index.html loads scripts with relative paths and app.js registers sw.js re
   assert.match(read('app.js'), /serviceWorker\.register\('sw\.js'\)/);
   assert.doesNotMatch(read('app.js'), /fetch\(['`]\/api/);
 });
+
+test('notifications go through the service worker and tapping one reopens the app', () => {
+  assert.match(read('app.js'), /reg\.showNotification\(/);
+  const sw = read('sw.js');
+  assert.match(sw, /addEventListener\('notificationclick'/);
+  assert.match(sw, /clients\.openWindow\(self\.registration\.scope\)/);
+});
+
+test('settings include backup export and import controls', () => {
+  const html = read('index.html');
+  ['export-backup-btn', 'import-backup-btn', 'import-backup-input'].forEach((id) => {
+    assert.match(html, new RegExp(`id="${id}"`));
+  });
+});

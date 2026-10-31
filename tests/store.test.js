@@ -138,3 +138,101 @@ test('data persists across store instances on the same storage', () => {
   const again = S.createStore(storage);
   assert.equal(again.listTasks()[0].text, 'Keep me');
 });
+
+test('reorderTasks follows the given ids and keeps unlisted tasks at the end', () => {
+  const { store } = makeStore();
+  const a = store.addTask('A');
+  const b = store.addTask('B');
+  const c = store.addTask('C');
+  store.reorderTasks([c.id, 'nope', a.id, c.id]);
+  assert.deepEqual(store.listTasks().map((t) => t.text), ['C', 'A', 'B']);
+  assert.equal(b.text, 'B');
+});
+
+test('backup round-trips into an empty browser', () => {
+  const { store } = makeStore();
+  const t = store.addTask('Ship it', 2);
+  store.logSession({ duration_seconds: 1500, task_id: t.id });
+  store.saveSettings({ focus_duration: 45, theme: 'dark' });
+  const backup = JSON.parse(JSON.stringify(store.exportBackup()));
+
+  const other = makeStore().store;
+  assert.deepEqual(other.importBackup(backup), { tasks: 1, sessions: 1 });
+  assert.equal(other.listTasks()[0].text, 'Ship it');
+  assert.equal(other.listTasks()[0].actual, 1);
+  assert.equal(other.getSettings().focus_duration, 45);
+  assert.equal(other.getSettings().theme, 'dark');
+});
+
+test('importing merges by id: re-importing adds nothing, other devices data is kept', () => {
+  const { store, clock } = makeStore();
+  store.addTask('Laptop task');
+  const backup = store.exportBackup();
+  assert.deepEqual(store.importBackup(backup), { tasks: 0, sessions: 0 });
+
+  clock.t = new Date(2026, 9, 28, 11);
+  const phone = makeStore(new Date(2026, 9, 28, 12)).store;
+  phone.addTask('Phone task');
+  phone.importBackup(backup);
+  assert.deepEqual(phone.listTasks().map((t) => t.text).sort(), ['Laptop task', 'Phone task']);
+});
+
+test('importBackup rejects other files and skips invalid rows', () => {
+  const { store } = makeStore();
+  assert.throws(() => store.importBackup({ hello: 1 }), /not a Pomodoro backup/);
+  assert.throws(() => store.importBackup(null), /not a Pomodoro backup/);
+  const base = store.exportBackup();
+  assert.throws(() => store.importBackup({ ...base, version: 99 }), /newer version/);
+
+  const result = store.importBackup({
+    ...base,
+    tasks: [{ id: 'ok', text: '  Valid  ', estimate: 99 }, { id: 'bad', text: '' }, 'junk', { text: 'no id' }],
+    sessions: [
+      { id: 's1', mode: 'focus', duration_seconds: 600, completed_at: '2026-10-27T10:00:00Z', task_id: 'ok' },
+      { id: 's2', mode: 'nap', duration_seconds: 600, completed_at: '2026-10-27T10:00:00Z' },
+      { id: 's3', mode: 'focus', duration_seconds: -5, completed_at: '2026-10-27T10:00:00Z' },
+      { id: 's4', mode: 'focus', duration_seconds: 600, completed_at: 'not a date' },
+    ],
+    settings: { focus_duration: 500 },
+  });
+  assert.deepEqual(result, { tasks: 1, sessions: 1 });
+  const [task] = store.listTasks();
+  assert.equal(task.text, 'Valid');
+  assert.equal(task.estimate, 20);
+  assert.equal(task.actual, 1);
+  assert.equal(store.getSettings().focus_duration, 25);
+});
+
+test('weeklyReview compares the last 7 days with the 7 before', () => {
+  const { store, clock } = makeStore(new Date(2026, 9, 16, 9));   // 12 days ago: previous week
+  store.logSession({ duration_seconds: 1800 });
+  const t = store.addTask('Thesis');
+  clock.t = new Date(2026, 9, 24, 9);                              // Saturday, this week
+  store.logSession({ duration_seconds: 1500, task_id: t.id });
+  store.logSession({ duration_seconds: 1500, task_id: t.id });
+  clock.t = new Date(2026, 9, 28, 9);                              // today
+  store.logSession({ duration_seconds: 1500 });
+
+  const r = store.weeklyReview();
+  assert.deepEqual(r.this_week, { minutes: 75, sessions: 3 });
+  assert.deepEqual(r.last_week, { minutes: 30, sessions: 1 });
+  assert.equal(r.change_percent, 150);
+  assert.equal(r.best_day.date, '2026-10-24');
+  assert.equal(r.best_day.minutes, 50);
+  assert.deepEqual(r.top_task, { label: 'Thesis', minutes: 50 });
+  assert.equal(r.longest_streak, 1);
+});
+
+test('weeklyReview with no history has nothing to compare', () => {
+  const r = makeStore().store.weeklyReview();
+  assert.equal(r.change_percent, null);
+  assert.equal(r.best_day, null);
+  assert.equal(r.top_task, null);
+  assert.equal(r.longest_streak, 0);
+});
+
+test('longestStreak finds the longest consecutive run, across month ends', () => {
+  assert.equal(S.longestStreak(['2026-10-30', '2026-10-31', '2026-11-01', '2026-11-03']), 3);
+  assert.equal(S.longestStreak(['2026-01-05', '2026-01-05']), 1);
+  assert.equal(S.longestStreak([]), 0);
+});
