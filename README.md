@@ -38,3 +38,14 @@ You can also just open `index.html` directly in a browser.
 Data is per browser and per device; clearing site data deletes it. Export CSV to keep a copy.
 
 Agent skills live in `.agents/skills/` (`code-review`, `feature-validation`). `code-review/SKILL.md` is the shared checklist used in every MusDev99 repo; `code-review/repo-checks.md` holds this app's extra checks.
+
+## 🌿 Branches
+
+Follows [BRANCHING.md](https://github.com/MusDev99/agentic-coding-style/blob/main/BRANCHING.md): `feat/`, `fix/`, `chore/` or `docs/` branches, Conventional Commit PR titles, squash merge.
+
+| Workflow | What it does |
+|---|---|
+| `.github/workflows/branch-policy.yml` | Fails a PR whose branch name or title breaks the rules |
+| `.github/workflows/branch-cleanup.yml` | Deletes the PR's branch once it is merged (skips forks, the default branch and branches another open PR is based on) |
+
+Keep **Settings → General → Automatically delete head branches** on as well; the workflow is the backup.
