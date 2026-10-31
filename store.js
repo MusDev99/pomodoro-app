@@ -91,6 +91,55 @@
 
   const round1 = (n) => Math.round(n * 10) / 10;
 
+  const BACKUP_APP = 'pomodoro-focus-dashboard';
+  const BACKUP_VERSION = 1;
+
+  const clampEstimate = (n) => (Number.isInteger(n) ? Math.min(MAX_ESTIMATE, Math.max(0, n)) : 0);
+
+  /** A task from an imported backup, normalised, or null if unusable. */
+  function cleanTask(t) {
+    if (!t || typeof t !== 'object' || typeof t.text !== 'string' || !t.text.trim()) return null;
+    if (typeof t.id !== 'string' && typeof t.id !== 'number') return null;
+    const created = Date.parse(t.created_at);
+    return {
+      id: String(t.id),
+      text: t.text.trim().slice(0, MAX_TASK_LENGTH),
+      completed: t.completed === true,
+      estimate: clampEstimate(t.estimate),
+      created_at: Number.isNaN(created) ? new Date(0).toISOString() : new Date(created).toISOString(),
+    };
+  }
+
+  /** A session from an imported backup, normalised, or null if unusable. */
+  function cleanSession(s) {
+    if (!s || typeof s !== 'object' || !VALID_MODES.includes(s.mode)) return null;
+    if (typeof s.id !== 'string' && typeof s.id !== 'number') return null;
+    const d = s.duration_seconds;
+    const at = Date.parse(s.completed_at);
+    if (!Number.isInteger(d) || d < 1 || d > MAX_SESSION_SECONDS || Number.isNaN(at)) return null;
+    return {
+      id: String(s.id), mode: s.mode, duration_seconds: d,
+      completed_at: new Date(at).toISOString(),
+      task_id: s.task_id == null ? null : String(s.task_id),
+    };
+  }
+
+  /** Longest run of consecutive days in a list of 'YYYY-MM-DD' keys. */
+  function longestStreak(dayKeys) {
+    const days = [...new Set(dayKeys)].sort();
+    let best = 0;
+    let run = 0;
+    let prev = null;
+    days.forEach((key) => {
+      const [y, m, d] = key.split('-').map(Number);
+      const date = new Date(y, m - 1, d);
+      run = prev && localDayKey(addDays(prev, 1)) === key ? run + 1 : 1;
+      best = Math.max(best, run);
+      prev = date;
+    });
+    return best;
+  }
+
   function createStore(storage, now = () => new Date()) {
     let lastId = 0;
 
@@ -170,6 +219,55 @@
       const kept = tasks.filter((t) => t.id !== id);
       if (kept.length !== tasks.length) write(KEYS.tasks, kept);
       return kept.length !== tasks.length;
+    }
+
+    /** Reorder tasks to follow `ids`; unknown ids are ignored, tasks missing from `ids` keep their place at the end. */
+    function reorderTasks(ids) {
+      const tasks = rawTasks();
+      const byId = new Map(tasks.map((t) => [t.id, t]));
+      const seen = new Set();
+      const ordered = [];
+      ids.forEach((id) => {
+        if (byId.has(id) && !seen.has(id)) {
+          seen.add(id);
+          ordered.push(byId.get(id));
+        }
+      });
+      write(KEYS.tasks, ordered.concat(tasks.filter((t) => !seen.has(t.id))));
+    }
+
+    /** Everything needed to restore this app on another browser/device. */
+    function exportBackup() {
+      return {
+        app: BACKUP_APP, version: BACKUP_VERSION, exported_at: now().toISOString(),
+        settings: getSettings(), tasks: rawTasks(), sessions: rawSessions(),
+      };
+    }
+
+    /**
+     * Merge a backup into the current data: tasks and sessions are added by id (existing ids are kept),
+     * settings are taken from the backup. Throws an Error with a user-facing message if the file is not a backup.
+     * Returns {tasks, sessions} = how many were added.
+     */
+    function importBackup(data) {
+      if (!data || typeof data !== 'object' || data.app !== BACKUP_APP || !Array.isArray(data.tasks) || !Array.isArray(data.sessions)) {
+        throw new Error('This file is not a Pomodoro backup.');
+      }
+      if (!(data.version <= BACKUP_VERSION)) throw new Error('This backup was made by a newer version of the app.');
+
+      const tasks = rawTasks();
+      const taskIds = new Set(tasks.map((t) => t.id));
+      const newTasks = data.tasks.map(cleanTask).filter((t) => t && !taskIds.has(t.id) && taskIds.add(t.id));
+
+      const sessions = rawSessions();
+      const sessionIds = new Set(sessions.map((s) => s.id));
+      const newSessions = data.sessions.map(cleanSession).filter((s) => s && !sessionIds.has(s.id) && sessionIds.add(s.id));
+
+      write(KEYS.tasks, tasks.concat(newTasks));
+      write(KEYS.sessions, sessions.concat(newSessions)
+        .sort((a, b) => Date.parse(a.completed_at) - Date.parse(b.completed_at)));
+      saveSettings(data.settings);
+      return { tasks: newTasks.length, sessions: newSessions.length };
     }
 
     function logSession({ mode = 'focus', duration_seconds = 1500, task_id = null } = {}) {
@@ -257,6 +355,55 @@
       return out;
     }
 
+    /**
+     * Last 7 days (including today) compared with the 7 days before, plus best day,
+     * top task this week and the longest streak ever.
+     */
+    function weeklyReview() {
+      const today = now();
+      const per = perDay();
+      const sumDays = (from, to) => {
+        let seconds = 0;
+        let count = 0;
+        for (let i = from; i <= to; i++) {
+          const d = per[localDayKey(addDays(today, -i))];
+          if (d) { seconds += d.seconds; count += d.count; }
+        }
+        return { minutes: round1(seconds / 60), sessions: count };
+      };
+      const thisWeek = sumDays(0, 6);
+      const lastWeek = sumDays(7, 13);
+
+      let bestDay = null;
+      for (let i = 6; i >= 0; i--) {
+        const d = addDays(today, -i);
+        const entry = per[localDayKey(d)];
+        if (entry && (!bestDay || entry.seconds / 60 > bestDay.minutes)) {
+          bestDay = { date: localDayKey(d), label: d.toLocaleDateString('en-US', { weekday: 'long' }), minutes: round1(entry.seconds / 60) };
+        }
+      }
+
+      const weekStart = addDays(today, -6).getTime();
+      const titles = {};
+      rawTasks().forEach((t) => { titles[t.id] = t.text; });
+      const perTask = {};
+      focusSessions().forEach((s) => {
+        if (s.task_id == null || Date.parse(s.completed_at) < weekStart) return;
+        perTask[s.task_id] = (perTask[s.task_id] || 0) + s.duration_seconds;
+      });
+      const topId = Object.keys(perTask).sort((a, b) => perTask[b] - perTask[a])[0];
+
+      return {
+        this_week: thisWeek,
+        last_week: lastWeek,
+        // null when there is nothing to compare against
+        change_percent: lastWeek.minutes > 0 ? Math.round(((thisWeek.minutes - lastWeek.minutes) / lastWeek.minutes) * 100) : null,
+        best_day: bestDay,
+        top_task: topId ? { label: titles[topId] || '(deleted task)', minutes: round1(perTask[topId] / 60) } : null,
+        longest_streak: longestStreak(Object.keys(per)),
+      };
+    }
+
     /** Full session history as CSV text (local timestamps, task title resolved). */
     function sessionsCsv() {
       const titles = {};
@@ -272,10 +419,10 @@
     }
 
     return {
-      getSettings, saveSettings, listTasks, addTask, updateTask, deleteTask,
-      logSession, summary, taskStats, heatmap, sessionsCsv,
+      getSettings, saveSettings, listTasks, addTask, updateTask, deleteTask, reorderTasks,
+      logSession, summary, taskStats, heatmap, weeklyReview, sessionsCsv, exportBackup, importBackup,
     };
   }
 
-  return { createStore, KEYS, DEFAULT_SETTINGS, localDayKey, computeStreak, csvSafe, cleanSettings };
+  return { createStore, KEYS, DEFAULT_SETTINGS, localDayKey, computeStreak, longestStreak, csvSafe, cleanSettings };
 });
